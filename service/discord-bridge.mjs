@@ -28,6 +28,8 @@ const TOOL_UPDATE_DEBOUNCE_MS = 450;
 const TEXT_UPDATE_DEBOUNCE_MS = 300;
 const MAX_OUTBOUND_FILES = 5;
 const MAX_OUTBOUND_FILE_BYTES = 8 * 1024 * 1024;
+const MAX_INLINED_ATTACHMENT_BYTES = 64 * 1024;
+const MAX_INLINED_ATTACHMENT_CHARS = 12_000;
 const FILE_MARKER = "DISCORD_ATTACH:";
 const DISCORD_PI_PWD = String(process.env.DISCORD_PI_PWD || "").trim();
 const DISCORD_PI_PID = parsePositiveInt(process.env.DISCORD_PI_PID);
@@ -735,22 +737,33 @@ class DiscordRunPublisher {
 async function buildInboundPayload(message, threadId) {
 	const images = [];
 	const attachmentNotes = [];
+	const attachmentTextBlocks = [];
 	for (const attachment of message.attachments.values()) {
-		const { fileName, contentType, url } = attachment;
+		const { name, contentType, url } = attachment;
 		if (!url) continue;
-		if (isImageAttachment(contentType, fileName)) {
-			try {
-				const image = await downloadImageAsBase64(url, contentType || guessMimeType(fileName));
-				images.push(image);
-				attachmentNotes.push(`Image attached: ${fileName}`);
-			} catch (error) {
-				attachmentNotes.push(`Failed to fetch image attachment ${fileName}: ${formatError(error)}`);
-			}
+		if (!name) {
+			attachmentNotes.push("Failed to process attachment: missing filename");
 			continue;
 		}
+		const fileName = name;
 		try {
-			const localPath = await downloadFileToThreadFolder(url, threadId, fileName || "attachment.bin");
-			attachmentNotes.push(`Attachment saved to ${localPath}`);
+			const downloaded = await downloadFileToThreadFolder(url, threadId, fileName);
+			attachmentNotes.push(`Attachment saved to ${downloaded.localPath}`);
+			if (isImageAttachment(contentType, fileName)) {
+				images.push({
+					type: "image",
+					data: downloaded.buffer.toString("base64"),
+					mimeType: contentType || guessMimeType(fileName),
+				});
+				attachmentNotes.push(`Image attached: ${fileName}`);
+				continue;
+			}
+			if (isTextAttachment(contentType, fileName, downloaded.buffer.length)) {
+				const attachmentText = decodeTextAttachment(downloaded.buffer);
+				if (attachmentText) {
+					attachmentTextBlocks.push({ fileName, text: attachmentText });
+				}
+			}
 		} catch (error) {
 			attachmentNotes.push(`Failed to fetch attachment ${fileName}: ${formatError(error)}`);
 		}
@@ -761,6 +774,14 @@ async function buildInboundPayload(message, threadId) {
 	if (bodyText) parts.push(bodyText);
 	if (attachmentNotes.length > 0) {
 		parts.push("\nAttachments:\n" + attachmentNotes.map((line) => `- ${line}`).join("\n"));
+	}
+	if (attachmentTextBlocks.length > 0) {
+		parts.push(
+			"\nAttachment contents:\n" +
+				attachmentTextBlocks
+					.map(({ fileName, text }) => `--- ${fileName} ---\n${text}`)
+					.join("\n\n"),
+		);
 	}
 	if (!bodyText && images.length > 0) {
 		parts.push("User sent image attachment(s). Analyze the attached image(s).");
@@ -1073,6 +1094,22 @@ function isImageAttachment(contentType, fileName) {
 	return [".png", ".jpg", ".jpeg", ".webp", ".gif"].includes(ext);
 }
 
+function isTextAttachment(contentType, fileName, byteLength) {
+	if (!Number.isFinite(byteLength) || byteLength <= 0 || byteLength > MAX_INLINED_ATTACHMENT_BYTES) return false;
+	const mime = String(contentType || "").toLowerCase();
+	if (mime.startsWith("text/")) return true;
+	if (["application/json", "application/xml", "application/javascript"].includes(mime)) return true;
+	const ext = extname(String(fileName || "")).toLowerCase();
+	return [".txt", ".md", ".json", ".yaml", ".yml", ".csv", ".xml", ".html", ".css", ".js", ".ts", ".py", ".log"].includes(ext);
+}
+
+function decodeTextAttachment(buffer) {
+	if (!Buffer.isBuffer(buffer) || buffer.length === 0) return "";
+	const raw = buffer.toString("utf8").replace(/\u0000/g, "").trim();
+	if (!raw) return "";
+	return truncate(raw, MAX_INLINED_ATTACHMENT_CHARS);
+}
+
 function guessMimeType(fileName) {
 	const ext = extname(String(fileName || "")).toLowerCase();
 	if (ext === ".png") return "image/png";
@@ -1080,17 +1117,6 @@ function guessMimeType(fileName) {
 	if (ext === ".gif") return "image/gif";
 	if (ext === ".webp") return "image/webp";
 	return "application/octet-stream";
-}
-
-async function downloadImageAsBase64(url, mimeType) {
-	const res = await fetch(url);
-	if (!res.ok) throw new Error(`HTTP ${res.status}`);
-	const arr = await res.arrayBuffer();
-	return {
-		type: "image",
-		data: Buffer.from(arr).toString("base64"),
-		mimeType,
-	};
 }
 
 async function downloadFileToThreadFolder(url, threadId, fileName) {
@@ -1101,6 +1127,7 @@ async function downloadFileToThreadFolder(url, threadId, fileName) {
 	const res = await fetch(url);
 	if (!res.ok) throw new Error(`HTTP ${res.status}`);
 	const arr = await res.arrayBuffer();
-	await writeFile(localPath, Buffer.from(arr));
-	return localPath;
+	const buffer = Buffer.from(arr);
+	await writeFile(localPath, buffer);
+	return { localPath, buffer };
 }
