@@ -40,10 +40,12 @@ From `pi-discord/`:
 npm install
 ```
 
-Symlink extension:
+Use the package entry in `~/.pi/agent/settings.json` as the single source of truth (no extension symlink).
+
+If you previously symlinked this extension, remove it:
 
 ```bash
-ln -sf "$(pwd)/extensions/discord-mode.ts" "$HOME/.pi/agent/extensions/discord-mode.ts"
+rm -f "$HOME/.pi/agent/extensions/discord-mode.ts"
 ```
 
 Reload Pi extensions:

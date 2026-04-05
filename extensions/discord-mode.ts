@@ -1,10 +1,12 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { realpathSync } from "node:fs";
 import path from "node:path";
 
 const STATUS_KEY = "discord-mode";
 const SERVICE_READY_TIMEOUT_MS = 20_000;
-const EXTENSION_DIR = __dirname;
+const EXTENSION_FILE_REALPATH = realpathSync(__filename);
+const EXTENSION_DIR = path.dirname(EXTENSION_FILE_REALPATH);
 const PROJECT_ROOT = path.resolve(EXTENSION_DIR, "..");
 const SERVICE_PATH = path.join(PROJECT_ROOT, "service", "discord-bridge.mjs");
 
