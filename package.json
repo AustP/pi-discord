@@ -1,0 +1,12 @@
+{
+  "name": "pi-discord",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync-commands": "node scripts/sync-discord-commands.mjs"
+  },
+  "dependencies": {
+    "discord.js": "^14.19.3"
+  }
+}
