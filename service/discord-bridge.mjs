@@ -167,7 +167,6 @@ client.on("interactionCreate", async (interaction) => {
 	if (interaction.commandName === DELETE_COMMAND_NAME) {
 		await interaction.deferReply({ ephemeral: true });
 		const thread = interaction.channel;
-		await stopRuntime(thread.id);
 
 		let starterDeleted = false;
 		let threadDeleted = false;
@@ -176,13 +175,6 @@ client.on("interactionCreate", async (interaction) => {
 		const starterMessage = await getStarterMessage(thread);
 		if (!starterMessage) {
 			issues.push("Could not find the parent-channel starter message.");
-		} else {
-			try {
-				await starterMessage.delete();
-				starterDeleted = true;
-			} catch (error) {
-				issues.push(`Could not delete starter message: ${formatError(error)}`);
-			}
 		}
 
 		try {
@@ -191,6 +183,17 @@ client.on("interactionCreate", async (interaction) => {
 		} catch (error) {
 			issues.push(`Could not delete thread: ${formatError(error)}`);
 		}
+
+		if (starterMessage) {
+			try {
+				await starterMessage.delete();
+				starterDeleted = true;
+			} catch (error) {
+				issues.push(`Could not delete starter message: ${formatError(error)}`);
+			}
+		}
+
+		await stopRuntime(thread.id);
 
 		const summary = [
 			starterDeleted ? "✅ Deleted starter message." : "⚠️ Starter message not deleted.",
