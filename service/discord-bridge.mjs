@@ -908,23 +908,34 @@ function safeJson(value) {
 
 function renderToolArgs(toolName, args) {
 	if (args == null) return "";
-	if (toolName !== "edit") return safeJson(args);
 	if (!args || typeof args !== "object") return safeJson(args);
 
-	const edits = Array.isArray(args.edits) ? args.edits : null;
-	if (!edits) return safeJson(args);
+	if (toolName === "edit") {
+		const edits = Array.isArray(args.edits) ? args.edits : null;
+		if (!edits) return safeJson(args);
 
-	const oldLines = edits.reduce((sum, edit) => sum + countLines(edit?.oldText), 0);
-	const newLines = edits.reduce((sum, edit) => sum + countLines(edit?.newText), 0);
-	const summary = {
-		path: typeof args.path === "string" ? args.path : undefined,
-		edits: edits.length,
-		lines: {
-			old: oldLines,
-			new: newLines,
-		},
-	};
-	return safeJson(summary);
+		const oldLines = edits.reduce((sum, edit) => sum + countLines(edit?.oldText), 0);
+		const newLines = edits.reduce((sum, edit) => sum + countLines(edit?.newText), 0);
+		const summary = {
+			path: typeof args.path === "string" ? args.path : undefined,
+			edits: edits.length,
+			lines: {
+				old: oldLines,
+				new: newLines,
+			},
+		};
+		return safeJson(summary);
+	}
+
+	if (toolName === "write") {
+		const summary = {
+			path: typeof args.path === "string" ? args.path : undefined,
+			lines: countLines(args.content),
+		};
+		return safeJson(summary);
+	}
+
+	return safeJson(args);
 }
 
 function countLines(value) {
@@ -945,25 +956,6 @@ function chunkText(text, maxLen = MAX_MESSAGE_CHARS) {
 	}
 	chunks.push(remaining);
 	return chunks.filter((chunk) => chunk.length > 0);
-}
-
-function extractToolText(result) {
-	if (!result || typeof result !== "object") return "";
-	if (!Array.isArray(result.content)) return "";
-	const lines = [];
-	for (const block of result.content) {
-		if (!block || typeof block !== "object") continue;
-		if (block.type !== "text") continue;
-		if (typeof block.text !== "string") continue;
-		lines.push(block.text);
-	}
-	return lines.join("\n").trim();
-}
-
-function clipToLastLines(text, maxLines) {
-	const lines = String(text || "").split("\n");
-	if (lines.length <= maxLines) return lines.join("\n");
-	return lines.slice(lines.length - maxLines).join("\n");
 }
 
 function extractAttachmentMarkers(text) {
